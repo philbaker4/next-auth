@@ -30,8 +30,9 @@ export default function parseProviders(params: {
   const providers = params.providers.map((p) => {
     const provider = typeof p === "function" ? p() : p
     const { options: userOptions, ...defaults } = provider
-
+    
     const id = (userOptions?.id ?? defaults.id) as string
+    // note: deep merge makes it such that we do not have to handle merging of sender options from user + defaults
     const merged = merge(defaults, userOptions, {
       signinUrl: `${url}/signin/${id}`,
       callbackUrl: `${url}/callback/${id}`,

@@ -4,7 +4,7 @@ import GitHub from "@auth/core/providers/github"
 import Credentials from "@auth/core/providers/credentials"
 // import Email from "@auth/core/providers/email"
 import OTP from "@auth/core/providers/otp"
-import type { Provider } from "@auth/core/providers"
+import type { OTPConfig, Provider } from "@auth/core/providers"
 
 import { TestAdapter } from "./testAdapter"
 
@@ -12,6 +12,54 @@ const db: Record<string, any> = {}
 
 import sgMail from "@sendgrid/mail"
 import { MAIL_API_KEY, MAIL_VERIFIED_DOMAIN } from "$env/static/private"
+
+import type { UserSenderTypes } from "@auth/core/lib/senders"
+
+// @ts-ignore 
+import { otpBuiltInSms, otpBuiltInSmtp } from "@auth/core/providers/otp"
+
+const myFakeSmsSender: UserSenderTypes<OTPConfig> = {
+  type: "sms",
+  service: "smsSenderService",
+  sendVerificationRequest: async (params) => {
+    const { identifier, url, provider, theme } = params
+    // send stuff!
+    console.log(
+      "my custom sms sender! defined in /otp-example/src/hooks.server.ts"
+    )
+    console.log({ identifier, url, provider, theme })
+  },
+}
+
+const myFakeSmtpSender: UserSenderTypes<OTPConfig> = {
+  type: "smtp",
+  server: "fake server",
+  from: "donotreply@myapp.com",
+  async sendVerificationRequest({ identifier, token, provider }) {
+    console.log(
+      "my custom smtp sender! defined in /otp-example/src/hooks.server.ts"
+    )
+    console.log(`SENDING VERIFICATION ${token} to ${identifier} `)
+    // comment out the rest of this function to test without actually sending email
+    // otp token is hardcoded to 123456
+    sgMail.setApiKey(MAIL_API_KEY)
+    // console.log(MAIL_FROM)
+    const message = {
+      to: identifier,
+      from: `noreply@${MAIL_VERIFIED_DOMAIN}`,
+      subject: "Sign in to My App",
+      html: `Your OTP code is ${token}`,
+      text: `Your OTP code is ${token}`,
+    }
+    try {
+      const resp = await sgMail.send(message)
+      console.log({ resp })
+    } catch (e: any) {
+      console.error(e)
+      console.log(e.response.body.errors)
+    }
+  },
+}
 
 export const handle = SvelteKitAuth({
   debug: true,
@@ -43,27 +91,10 @@ export const handle = SvelteKitAuth({
     //   },
     // }),
     OTP({
-      async sendVerificationRequest({ identifier, token, provider }) {
-        console.log(`SENDING VERIFICATION ${token} to ${identifier} `)
-        // comment out the rest of this function to test without actually sending email
-        // otp token is hardcoded to 123456
-        sgMail.setApiKey(MAIL_API_KEY)
-        // console.log(MAIL_FROM)
-        const message = {
-          to: identifier,
-          from: `noreply@${MAIL_VERIFIED_DOMAIN}`,
-          subject: "Sign in to My App",
-          html: `Your OTP code is ${token}`,
-          text: `Your OTP code is ${token}`,
-        }
-        try {
-          const resp = await sgMail.send(message)
-          console.log({ resp })
-        } catch (e: any) {
-          console.error(e)
-          console.log(e.response.body.errors)
-        }
-      },
+      // sender: myFakeSmsSender,
+      // sender: myFakeSmtpSender,
+      // sender: otpBuiltInSms,
+      sender: otpBuiltInSmtp,
     }),
     // NOTE: You can start a fake e-mail server with `pnpm email`
     // and then go to `http://localhost:1080` in the browser

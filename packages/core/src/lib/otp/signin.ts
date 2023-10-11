@@ -26,7 +26,7 @@ export default async function generateOTP(
 
   const secret = provider.secret ?? options.secret
   await Promise.all([
-    provider.sendVerificationRequest({
+    provider.sender.sendVerificationRequest({
       identifier,
       token,
       expires,
