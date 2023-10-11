@@ -1,41 +1,8 @@
 import type { CommonProviderOptions } from "./index.js"
 import type { Awaitable, Theme } from "../types.js"
 
-import { Transport, TransportOptions, createTransport } from "nodemailer"
-import * as JSONTransport from "nodemailer/lib/json-transport/index.js"
-import * as SendmailTransport from "nodemailer/lib/sendmail-transport/index.js"
-import * as SESTransport from "nodemailer/lib/ses-transport/index.js"
-import * as SMTPTransport from "nodemailer/lib/smtp-transport/index.js"
-import * as SMTPPool from "nodemailer/lib/smtp-pool/index.js"
-import * as StreamTransport from "nodemailer/lib/stream-transport/index.js"
-
-// TODO: Make use of https://www.typescriptlang.org/docs/handbook/2/template-literal-types.html for the string
-type AllTransportOptions =
-  | string
-  | SMTPTransport
-  | SMTPTransport.Options
-  | SMTPPool
-  | SMTPPool.Options
-  | SendmailTransport
-  | SendmailTransport.Options
-  | StreamTransport
-  | StreamTransport.Options
-  | JSONTransport
-  | JSONTransport.Options
-  | SESTransport
-  | SESTransport.Options
-  | Transport<any>
-  | TransportOptions
-
-export interface SendOTPVerificationRequestParams {
-  identifier: string
-  url: string
-  expires: Date
-  provider: OTPConfig
-  token: string
-  theme: Theme
-  request: Request
-}
+import { createTransport } from "nodemailer"
+import { SenderTypes, UserSenderTypes } from "src/lib/senders/index.js"
 
 /**
  * Besides providing type safety inside {@link CredentialsConfig.authorize}
@@ -60,10 +27,8 @@ export interface OTPInput extends Partial<JSX.IntrinsicElements["input"]> {
  * [Custom email service with Auth.js](https://authjs.dev/guides/providers/email#custom-email-service)
  */
 export interface OTPUserConfig {
-  server?: AllTransportOptions
-  type?: "email"
-  /** @default `"Auth.js <no-reply@authjs.dev>"` */
-  from?: string
+  sender: UserSenderTypes<OTPConfig>
+
   /**
    * How long until the e-mail can be used to log the user in,
    * in seconds. Defaults to 1 day
@@ -71,10 +36,6 @@ export interface OTPUserConfig {
    * @default 86400
    */
   maxAge?: number
-  /** [Documentation](https://authjs.dev/guides/providers/email#customizing-emails) */
-  sendVerificationRequest?: (
-    params: SendOTPVerificationRequestParams
-  ) => Awaitable<void>
   /**
    * By default, we are generating a random verification token.
    * You can make it predictable or modify it as you like with this method.
@@ -110,6 +71,8 @@ export interface OTPUserConfig {
 }
 
 export interface OTPConfig extends CommonProviderOptions {
+  sender: SenderTypes<OTPConfig>
+
   // defaults
   id: "otp"
   type: "otp"
@@ -118,13 +81,7 @@ export interface OTPConfig extends CommonProviderOptions {
   identifierInput: OTPInput
   otpInput: OTPInput
 
-  server: AllTransportOptions
-  from: string
   maxAge: number
-  sendVerificationRequest: (
-    params: SendOTPVerificationRequestParams
-  ) => Awaitable<void>
-
   /**
    * This is copied into OTPConfig in parseProviders() don't use elsewhere
    */
@@ -135,6 +92,32 @@ export interface OTPConfig extends CommonProviderOptions {
   secret?: string
   generateVerificationToken?: () => Awaitable<string>
   normalizeIdentifier?: (identifier: string) => string
+}
+
+export const otpBuiltInSms: UserSenderTypes<OTPConfig> = {
+  type: "sms",
+  service: "smsSenderService",
+  sendVerificationRequest: async (params) => {
+    const { identifier, url, provider, theme } = params
+    // send stuff!
+    console.log(
+      "otpBuiltInSms! defined in /core/providers/otp"    )
+    console.log({ identifier, url, provider, theme })
+  },
+}
+
+export const otpBuiltInSmtp: UserSenderTypes<OTPConfig> = {
+  type: "smtp",
+  server: "fake server",
+  from: "donotreply@myapp.com",
+  async sendVerificationRequest(params) {
+    const { identifier, url, provider, theme } = params
+    // send stuff!
+    console.log(
+      "otpBuiltInSmtp! defined in /core/providers/otp"
+    )
+    console.log({ identifier, url, provider, theme })
+  },
 }
 
 // TODO: Rename to Token provider
@@ -375,30 +358,47 @@ export type OTPProviderType = "otp"
  */
 export default function OTP(config: OTPUserConfig): OTPConfig {
   return {
+    // sender: {
+    //   type: "sms",
+    //   service: "smsSenderService",
+    //   sendVerificationRequest: async (params) => {
+    //     const { identifier, url, provider, theme } = params
+    //     // send stuff!
+    //     console.log("inside of OTPProvider, sms sender!")
+    //     console.log({ identifier, url, provider, theme })
+    //   },
+    // },
+
+    // defaulting to smtp sender for otp provider
+    sender: {
+      type: "smtp",
+      server: { host: "localhost", port: 25, auth: { user: "", pass: "" } },
+      from: "Auth.js <no-reply@authjs.dev>",
+      sendVerificationRequest: async (params) => {
+        console.log("inside of OTPProvider, smtp sender!")
+        const { identifier, url, provider, theme } = params
+        console.log({ identifier, url, provider, theme })
+        //  const { host } = new URL(url)
+        //  const transport = createTransport(provider.sender.server)
+        //  const result = await transport.sendMail({
+        //   to: identifier,
+        //   from: provider.sender.from,
+        //   subject: `Your OTP code for ${host}`,
+        //   text: text({ url, host }),
+        //    html: html({ url, host, theme }),
+        //   })
+        //   const failed = result.rejected.concat(result.pending).filter(Boolean)
+        //   if (failed.length) {
+        //     throw new Error(`Email (${failed.join(", ")}) could not be sent`)
+        //   }
+      },
+    },
     id: "otp",
     type: "otp",
     name: "OTP",
     identifierInput: { label: "Email" },
     otpInput: { label: "OTP", placeholder: "######" },
-    server: { host: "localhost", port: 25, auth: { user: "", pass: "" } },
-    from: "Auth.js <no-reply@authjs.dev>",
     maxAge: 24 * 60 * 60,
-    async sendVerificationRequest(params) {
-      const { identifier, url, provider, theme } = params
-      const { host } = new URL(url)
-      const transport = createTransport(provider.server)
-      const result = await transport.sendMail({
-        to: identifier,
-        from: provider.from,
-        subject: `Your OTP code for ${host}`,
-        text: text({ url, host }),
-        html: html({ url, host, theme }),
-      })
-      const failed = result.rejected.concat(result.pending).filter(Boolean)
-      if (failed.length) {
-        throw new Error(`Email (${failed.join(", ")}) could not be sent`)
-      }
-    },
     options: config,
   }
 }
